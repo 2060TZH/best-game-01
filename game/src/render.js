@@ -6,6 +6,22 @@ import { FIELD, PLAYER, BULLET, ENEMIES, POWERUPS, COMBO, PALETTE, FEEL, UPGRADE
 import { makeRandom } from './random.js';
 import { SCREEN_TITLE, SCREEN_PLAY, SCREEN_DRAFT, SCREEN_OVER, SCREEN_WIN } from './world.js';
 
+// The boss's 3D-rendered sprite (Blender, transparent PNG, 512x512; the
+// render's content fills about 70% of the frame). It loads once, from a
+// static file beside the game, so the game still runs fully offline. If it
+// fails to load, the boss falls back to the procedural spiked core below.
+const bossImage = new Image();
+bossImage.src = 'assets/boss.png';
+const bossFirstSeen = new WeakMap();
+function bossSpriteReady() {
+  return bossImage.complete && bossImage.naturalWidth > 0;
+}
+// Entrance scale: 0 on arrival, overshoots slightly, settles at 1.
+function bossEntranceScale(age) {
+  const t = Math.min(1, age / 0.6);
+  return 1 + 2.70158 * (t - 1) ** 3 + 1.70158 * (t - 1) ** 2;
+}
+
 // A fixed starfield, the same on every run.
 const stars = (() => {
   const random = makeRandom(1337);
@@ -132,27 +148,37 @@ function drawEnemy(ctx, enemy, time) {
     ctx.arc(0, 0, enemy.radius * 0.4, 0, Math.PI * 2);
     ctx.fill();
   } else if (enemy.kind === 'boss') {
-    // A huge spiked core with a health bar and a name tag.
-    ctx.rotate(time * 0.7);
-    ctx.beginPath();
-    for (let i = 0; i < 8; i += 1) {
-      const angle = (i / 8) * Math.PI * 2;
-      const outer = i % 2 === 0 ? enemy.radius : enemy.radius * 0.62;
-      const x = Math.cos(angle) * outer;
-      const y = Math.sin(angle) * outer;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    // A huge spiked core with a health bar and a name tag. The 3D render
+    // spins slowly and scales in on arrival; the procedural shape below is
+    // the fallback if the sprite has not loaded.
+    if (bossSpriteReady()) {
+      if (!bossFirstSeen.has(enemy)) bossFirstSeen.set(enemy, time);
+      const scale = bossEntranceScale(time - bossFirstSeen.get(enemy));
+      const size = (enemy.radius * 2 / 0.695) * scale;
+      ctx.rotate(time * 0.7);
+      ctx.drawImage(bossImage, -size / 2, -size / 2, size, size);
+    } else {
+      ctx.rotate(time * 0.7);
+      ctx.beginPath();
+      for (let i = 0; i < 8; i += 1) {
+        const angle = (i / 8) * Math.PI * 2;
+        const outer = i % 2 === 0 ? enemy.radius : enemy.radius * 0.62;
+        const x = Math.cos(angle) * outer;
+        const y = Math.sin(angle) * outer;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#070a1a';
+      ctx.beginPath();
+      ctx.arc(0, 0, enemy.radius * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = enemy.color;
+      ctx.beginPath();
+      ctx.arc(0, 0, enemy.radius * 0.22, 0, Math.PI * 2);
+      ctx.fill();
     }
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#070a1a';
-    ctx.beginPath();
-    ctx.arc(0, 0, enemy.radius * 0.45, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = enemy.color;
-    ctx.beginPath();
-    ctx.arc(0, 0, enemy.radius * 0.22, 0, Math.PI * 2);
-    ctx.fill();
     ctx.restore();
     const barWidth = enemy.radius * 2;
     const ratio = Math.max(0, enemy.hp / enemy.maxHp);

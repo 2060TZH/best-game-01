@@ -179,6 +179,9 @@ export function stageShot(name, world) {
     if (state.powerups.length === 0) {
       state.powerups.push({ type: 'spread', x: FIELD.width - 180, y: 170, color: '#ffd94d', life: 9, bob: 0 });
     }
+    // The staged frame is a still: clear the floating score popups so they
+    // do not smear over the wave banner.
+    state.popups.length = 0;
     return { screen: state.screen === SCREEN_PLAY ? SCREEN_PLAY : state.screen };
   }
   if (name === 'draft') {
