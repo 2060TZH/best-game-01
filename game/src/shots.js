@@ -5,8 +5,8 @@
 // like a decent player; the weak pilot wanders and never dashes, so it is
 // caught out as a hurried player is. Sound is muted while staging: the
 // screenshots are silent frames of the same game.
-import { FIELD, STEP } from './config.js';
-import { SCREEN_TITLE, SCREEN_PLAY, SCREEN_OVER, SCREEN_WIN } from './world.js';
+import { FIELD } from './config.js';
+import { STEP, SCREEN_TITLE, SCREEN_PLAY, SCREEN_OVER, SCREEN_WIN } from './world.js';
 import { setMuted } from './audio.js';
 
 const START_SECONDS = 5;
@@ -145,7 +145,9 @@ export function stageShot(name, world) {
     for (let i = 0; i < PLAY_CAP_SECONDS / STEP; i += 1) {
       world.step(STEP, strongPilot(state));
       if (state.screen !== SCREEN_PLAY) break;
-      if (state.timePlayed >= PLAY_SECONDS && state.wave >= 3) break;
+      // A busy mid-wave frame: wave 3 or later, half a minute in, and at
+      // least six hunters on the field at once.
+      if (state.timePlayed >= PLAY_SECONDS && state.wave >= 3 && state.enemies.length >= 6) break;
     }
     // Make sure the play frame shows a power-up on the field: the staged
     // run usually drops one, and one is placed if it did not.

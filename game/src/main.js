@@ -1,8 +1,8 @@
 // VOIDLIGHT's boot and loop: the state machine around the world (title,
 // play, pause, game over, victory), the fixed-step loop, and the staged
 // screenshot scenes behind ?shot=start|play|win|over.
-import { FIELD, STEP } from './config.js';
-import { createWorld, SCREEN_TITLE, SCREEN_PLAY, SCREEN_OVER, SCREEN_WIN } from './world.js';
+import { FIELD } from './config.js';
+import { createWorld, STEP, SCREEN_TITLE, SCREEN_PLAY, SCREEN_OVER, SCREEN_WIN } from './world.js';
 import { render } from './render.js';
 import { createInput } from './input.js';
 import { unlockAudio, setMuted, isMuted, sfx } from './audio.js';
@@ -88,18 +88,24 @@ function frame(now) {
   requestAnimationFrame(frame);
   const elapsed = Math.min(0.1, (now - last) / 1000);
   last = now;
-  stepMenus();
-  if (state.screen === SCREEN_PLAY && !state.paused) {
-    accumulator += elapsed;
-    while (accumulator >= STEP) {
+  // A staged screenshot holds its moment: the world does not advance, so
+  // the captured frame is exactly the scene the autopilot staged — the
+  // bullets stay in flight, the combo stays lit, the wave stays busy.
+  // Only the render-time animation (stars, spinner spin) keeps moving.
+  if (!shotName) {
+    stepMenus();
+    if (state.screen === SCREEN_PLAY && !state.paused) {
+      accumulator += elapsed;
+      while (accumulator >= STEP) {
+        world.step(STEP, input);
+        accumulator -= STEP;
+      }
+    } else if (state.screen === SCREEN_TITLE) {
+      // The title drifts on its own: one step per frame is enough.
       world.step(STEP, input);
-      accumulator -= STEP;
+    } else {
+      world.step(STEP, input);
     }
-  } else if (state.screen === SCREEN_TITLE) {
-    // The title drifts on its own: one step per frame is enough.
-    world.step(STEP, input);
-  } else {
-    world.step(STEP, input);
   }
   time += elapsed;
   render(ctx, state, time);

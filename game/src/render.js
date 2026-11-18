@@ -154,8 +154,15 @@ function drawBullets(ctx, state) {
   ctx.save();
   ctx.shadowColor = PALETTE.bullet;
   ctx.shadowBlur = 8;
+  ctx.strokeStyle = PALETTE.bullet;
   ctx.fillStyle = PALETTE.bullet;
+  ctx.lineWidth = 2;
   for (const bullet of state.bullets) {
+    // A short trail so a shot reads as motion, not a dot.
+    ctx.beginPath();
+    ctx.moveTo(bullet.x - bullet.vx * 0.03, bullet.y - bullet.vy * 0.03);
+    ctx.lineTo(bullet.x, bullet.y);
+    ctx.stroke();
     ctx.beginPath();
     ctx.arc(bullet.x, bullet.y, BULLET.radius, 0, Math.PI * 2);
     ctx.fill();
