@@ -6,14 +6,15 @@
 // caught out as a hurried player is. Sound is muted while staging: the
 // screenshots are silent frames of the same game.
 import { FIELD } from './config.js';
-import { STEP, SCREEN_TITLE, SCREEN_PLAY, SCREEN_OVER, SCREEN_WIN } from './world.js';
+import { STEP, SCREEN_TITLE, SCREEN_PLAY, SCREEN_DRAFT, SCREEN_OVER, SCREEN_WIN } from './world.js';
 import { setMuted } from './audio.js';
 
 const START_SECONDS = 5;
 const PLAY_SECONDS = 26;
-const PLAY_CAP_SECONDS = 120;
-const WIN_CAP_SECONDS = 900;
+const PLAY_CAP_SECONDS = 240;
+const WIN_CAP_SECONDS = 1200;
 const OVER_CAP_SECONDS = 600;
+const DRAFT_CAP_SECONDS = 300;
 
 // Build one frame of synthetic input for the autopilot.
 function blankInput() {
@@ -22,6 +23,7 @@ function blankInput() {
     fire: false, dash: false, pressedDash: false,
     mouseX: FIELD.width / 2, mouseY: FIELD.height / 2,
     mouseDown: false, clicked: false,
+    draftPick: -1,
   };
 }
 
@@ -52,6 +54,11 @@ function aimTarget(state) {
 
 function strongPilot(state) {
   const input = blankInput();
+  // In the draft, a decent player takes the first offered upgrade.
+  if (state.screen === SCREEN_DRAFT) {
+    input.draftPick = 0;
+    return input;
+  }
   const player = state.player;
   const target = aimTarget(state);
   if (target) {
@@ -109,6 +116,11 @@ function strongPilot(state) {
 
 function weakPilot(state) {
   const input = blankInput();
+  // A hurried player grabs whatever the draft offers first.
+  if (state.screen === SCREEN_DRAFT) {
+    input.draftPick = 0;
+    return input;
+  }
   const player = state.player;
   const target = aimTarget(state);
   if (target) {
@@ -129,25 +141,38 @@ function weakPilot(state) {
 }
 
 /**
- * Set `world` to the named scene (start, play, win or over; any other name is
- * start) and return the screen to draw over it.
+ * Set `world` to the named scene (start, play, draft, win or over; any other
+ * name is start) and return the screen to draw over it.
  */
 export function stageShot(name, world) {
   setMuted(true);
   const state = world.state;
   world.reset();
-  if (name !== 'play' && name !== 'win' && name !== 'over') {
+  if (name !== 'play' && name !== 'draft' && name !== 'win' && name !== 'over') {
     for (let i = 0; i < START_SECONDS / STEP; i += 1) world.step(STEP, blankInput());
     return { screen: SCREEN_TITLE };
   }
   world.start();
   if (name === 'play') {
+    // A boss-fight frame: wait for the wave-5 boss, then let the fight get
+    // busy for a few seconds so minions and orbs are on the field.
+    // (Draft screens between waves do not stop the run: the pilot picks.)
+    let bossSeen = 0;
     for (let i = 0; i < PLAY_CAP_SECONDS / STEP; i += 1) {
       world.step(STEP, strongPilot(state));
-      if (state.screen !== SCREEN_PLAY) break;
-      // A busy mid-wave frame: wave 3 or later, half a minute in, and at
-      // least six hunters on the field at once.
-      if (state.timePlayed >= PLAY_SECONDS && state.wave >= 3 && state.enemies.length >= 6) break;
+      if (state.screen === SCREEN_OVER || state.screen === SCREEN_WIN) break;
+      if (state.enemies.some((e) => e.kind === 'boss')) {
+        bossSeen += 1;
+        if (bossSeen > 4 / STEP) break;
+      }
+    }
+    // Fallback: if the pilot died before the boss, take the busy frame.
+    if (state.screen === SCREEN_PLAY && !state.enemies.some((e) => e.kind === 'boss')) {
+      for (let i = 0; i < PLAY_CAP_SECONDS / STEP; i += 1) {
+        world.step(STEP, strongPilot(state));
+        if (state.screen === SCREEN_OVER || state.screen === SCREEN_WIN) break;
+        if (state.timePlayed >= PLAY_SECONDS && state.wave >= 3 && state.enemies.length >= 6) break;
+      }
     }
     // Make sure the play frame shows a power-up on the field: the staged
     // run usually drops one, and one is placed if it did not.
@@ -156,10 +181,22 @@ export function stageShot(name, world) {
     }
     return { screen: state.screen === SCREEN_PLAY ? SCREEN_PLAY : state.screen };
   }
+  if (name === 'draft') {
+    for (let i = 0; i < DRAFT_CAP_SECONDS / STEP; i += 1) {
+      world.step(STEP, strongPilot(state));
+      if (state.screen === SCREEN_DRAFT) break;
+      if (state.screen !== SCREEN_PLAY) break;
+    }
+    if (state.screen !== SCREEN_DRAFT) {
+      // The pilot never reached a draft: stage one from this run's state.
+      world.openDraft();
+    }
+    return { screen: SCREEN_DRAFT };
+  }
   if (name === 'win') {
     for (let i = 0; i < WIN_CAP_SECONDS / STEP; i += 1) {
       world.step(STEP, strongPilot(state));
-      if (state.screen !== SCREEN_PLAY) break;
+      if (state.screen === SCREEN_OVER || state.screen === SCREEN_WIN) break;
     }
     if (state.screen === SCREEN_WIN) return { screen: SCREEN_WIN };
     // The pilot fell short of clearing wave 10. The victory frame is still
@@ -173,7 +210,7 @@ export function stageShot(name, world) {
   // Over: the weak pilot plays until the void takes it.
   for (let i = 0; i < OVER_CAP_SECONDS / STEP; i += 1) {
     world.step(STEP, weakPilot(state));
-    if (state.screen !== SCREEN_PLAY) break;
+    if (state.screen === SCREEN_OVER || state.screen === SCREEN_WIN) break;
   }
   if (state.screen === SCREEN_OVER) return { screen: SCREEN_OVER };
   state.screen = SCREEN_OVER;

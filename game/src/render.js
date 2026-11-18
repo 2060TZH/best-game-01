@@ -2,9 +2,9 @@
 // has. The HUD is drawn on the same canvas so a screenshot always shows the
 // whole game — score, wave, lives, combo and power-ups — exactly as the
 // player sees it.
-import { FIELD, PLAYER, BULLET, ENEMIES, POWERUPS, COMBO, PALETTE, FEEL } from './config.js';
+import { FIELD, PLAYER, BULLET, ENEMIES, POWERUPS, COMBO, PALETTE, FEEL, UPGRADES } from './config.js';
 import { makeRandom } from './random.js';
-import { SCREEN_TITLE, SCREEN_PLAY, SCREEN_OVER, SCREEN_WIN } from './world.js';
+import { SCREEN_TITLE, SCREEN_PLAY, SCREEN_DRAFT, SCREEN_OVER, SCREEN_WIN } from './world.js';
 
 // A fixed starfield, the same on every run.
 const stars = (() => {
@@ -131,6 +131,41 @@ function drawEnemy(ctx, enemy, time) {
     ctx.beginPath();
     ctx.arc(0, 0, enemy.radius * 0.4, 0, Math.PI * 2);
     ctx.fill();
+  } else if (enemy.kind === 'boss') {
+    // A huge spiked core with a health bar and a name tag.
+    ctx.rotate(time * 0.7);
+    ctx.beginPath();
+    for (let i = 0; i < 8; i += 1) {
+      const angle = (i / 8) * Math.PI * 2;
+      const outer = i % 2 === 0 ? enemy.radius : enemy.radius * 0.62;
+      const x = Math.cos(angle) * outer;
+      const y = Math.sin(angle) * outer;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#070a1a';
+    ctx.beginPath();
+    ctx.arc(0, 0, enemy.radius * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = enemy.color;
+    ctx.beginPath();
+    ctx.arc(0, 0, enemy.radius * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    const barWidth = enemy.radius * 2;
+    const ratio = Math.max(0, enemy.hp / enemy.maxHp);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(enemy.x - barWidth / 2, enemy.y - enemy.radius - 14, barWidth, 5);
+    ctx.fillStyle = enemy.color;
+    ctx.fillRect(enemy.x - barWidth / 2, enemy.y - enemy.radius - 14, barWidth * ratio, 5);
+    ctx.fillStyle = '#e8f0ff';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('BOSS', enemy.x, enemy.y - enemy.radius - 24);
+    return;
   } else {
     // Bulwark: a heavy square with an inner core and a health bar.
     ctx.rotate(Math.PI / 4 + Math.sin(time * 0.8) * 0.08);
@@ -302,12 +337,21 @@ function drawHud(ctx, state) {
     ctx.fillText(label, FIELD.width - 18, 74 + row * 18);
     row += 1;
   }
+  // Owned draft upgrades as compact glyphs, right side under the rest.
+  const owned = Object.keys(state.upgrades);
+  if (owned.length > 0) {
+    ctx.fillStyle = '#ffd94d';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText(owned.map((id) => `${UPGRADES[id].glyph}${state.upgrades[id] > 1 ? state.upgrades[id] : ''}`).join('  '), FIELD.width - 18, 74 + row * 18);
+    row += 1;
+  }
   // Dash cooldown, bottom left.
   ctx.textAlign = 'left';
   ctx.fillStyle = PALETTE.dimText;
   ctx.font = '600 11px system-ui, sans-serif';
   ctx.fillText('DASH [SHIFT]', 18, FIELD.height - 34);
-  const dashRatio = player.dashCooldown <= 0 ? 1 : 1 - player.dashCooldown / 2.2;
+  const dashMax = PLAYER.dashCooldown * Math.pow(0.7, state.upgrades.swift || 0);
+  const dashRatio = player.dashCooldown <= 0 ? 1 : 1 - player.dashCooldown / dashMax;
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   ctx.fillRect(18, FIELD.height - 20, 90, 5);
   ctx.fillStyle = dashRatio >= 1 ? '#4de8ff' : '#8fa3d9';
@@ -366,7 +410,7 @@ function drawTitle(ctx, state) {
   const lines = [
     'WASD / arrows — move      Mouse — aim      Click / Space — fire',
     'Shift / right-click — dash through danger',
-    'Chain kills for a combo multiplier. Grab power-ups. Watch for spinners.',
+    'Clear a wave, draft 1 of 3 upgrades. Bosses guard waves 5 and 10.',
     'Darts telegraph before they lunge. Bulwarks split in two when they die.',
   ];
   lines.forEach((line, i) => ctx.fillText(line, FIELD.width / 2, 292 + i * 28));
@@ -448,6 +492,50 @@ function drawWin(ctx, state) {
   ctx.restore();
 }
 
+function drawDraft(ctx, state) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(7, 10, 26, 0.55)';
+  ctx.fillRect(0, 0, FIELD.width, FIELD.height);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#ffd94d';
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = '#ffd94d';
+  ctx.font = 'bold 32px system-ui, sans-serif';
+  ctx.fillText(`WAVE ${state.wave} CLEARED — CHOOSE AN UPGRADE`, FIELD.width / 2, 104);
+  ctx.shadowBlur = 0;
+  const cardWidth = 240;
+  const cardHeight = 210;
+  const gap = 28;
+  const total = cardWidth * 3 + gap * 2;
+  const startX = (FIELD.width - total) / 2;
+  const y = 168;
+  state.draftRects = [];
+  state.draft.forEach((id, i) => {
+    const spec = UPGRADES[id];
+    const level = state.upgrades[id] || 0;
+    const x = startX + i * (cardWidth + gap);
+    state.draftRects.push({ x, y, width: cardWidth, height: cardHeight });
+    drawPanel(ctx, x, y, cardWidth, cardHeight);
+    ctx.fillStyle = spec.color;
+    ctx.font = 'bold 44px system-ui, sans-serif';
+    ctx.fillText(spec.glyph, x + cardWidth / 2, y + 56);
+    ctx.fillStyle = '#e8f0ff';
+    ctx.font = 'bold 19px system-ui, sans-serif';
+    ctx.fillText(spec.name, x + cardWidth / 2, y + 110);
+    ctx.fillStyle = PALETTE.dimText;
+    ctx.font = '15px system-ui, sans-serif';
+    ctx.fillText(spec.desc, x + cardWidth / 2, y + 140);
+    ctx.fillStyle = spec.color;
+    ctx.font = '600 13px system-ui, sans-serif';
+    ctx.fillText(level > 0 ? `OWNED Lv${level} — PRESS ${i + 1} FOR Lv${level + 1}` : `NEW — PRESS ${i + 1}`, x + cardWidth / 2, y + 172);
+  });
+  ctx.fillStyle = PALETTE.dimText;
+  ctx.font = '16px system-ui, sans-serif';
+  ctx.fillText('PRESS 1 / 2 / 3 OR CLICK A CARD', FIELD.width / 2, 438);
+  ctx.restore();
+}
+
 function drawPaused(ctx) {
   ctx.save();
   ctx.fillStyle = 'rgba(7, 10, 26, 0.6)';
@@ -483,6 +571,7 @@ export function render(ctx, state, time) {
     drawPopups(ctx, state);
     drawHud(ctx, state);
     drawBanner(ctx, state);
+    if (state.screen === SCREEN_DRAFT) drawDraft(ctx, state);
     if (state.screen === SCREEN_OVER) drawOver(ctx, state);
     if (state.screen === SCREEN_WIN) drawWin(ctx, state);
     if (state.paused) drawPaused(ctx);

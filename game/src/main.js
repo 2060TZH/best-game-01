@@ -2,7 +2,7 @@
 // play, pause, game over, victory), the fixed-step loop, and the staged
 // screenshot scenes behind ?shot=start|play|win|over.
 import { FIELD } from './config.js';
-import { createWorld, STEP, SCREEN_TITLE, SCREEN_PLAY, SCREEN_OVER, SCREEN_WIN } from './world.js';
+import { createWorld, STEP, SCREEN_TITLE, SCREEN_PLAY, SCREEN_DRAFT, SCREEN_OVER, SCREEN_WIN } from './world.js';
 import { render } from './render.js';
 import { createInput } from './input.js';
 import { unlockAudio, setMuted, isMuted, sfx } from './audio.js';
@@ -39,14 +39,10 @@ function saveBest() {
   }
 }
 
-// Track menu-key edges: a key counts once per press, not once per frame.
-const downBefore = new Set();
+// Menu keys count once per press: the input records each keydown edge and
+// the loop consumes it, so a quick tap is never lost between frames.
 function pressed(code) {
-  const down = input.isDown(code);
-  const edge = down && !downBefore.has(code);
-  if (down) downBefore.add(code);
-  else downBefore.delete(code);
-  return edge;
+  return input.consumePress(code);
 }
 
 function toggleMute() {
@@ -72,6 +68,20 @@ function stepMenus() {
       sfx.click();
     }
     if (state.paused && input.clicked) state.paused = false;
+  } else if (state.screen === SCREEN_DRAFT) {
+    if (pressed('Digit1')) world.applyDraft(0);
+    else if (pressed('Digit2')) world.applyDraft(1);
+    else if (pressed('Digit3')) world.applyDraft(2);
+    else if (input.clicked) {
+      const rects = state.draftRects || [];
+      for (let i = 0; i < rects.length; i += 1) {
+        const r = rects[i];
+        if (input.mouseX >= r.x && input.mouseX <= r.x + r.width && input.mouseY >= r.y && input.mouseY <= r.y + r.height) {
+          world.applyDraft(i);
+          break;
+        }
+      }
+    }
   } else if (state.screen === SCREEN_OVER || state.screen === SCREEN_WIN) {
     saveBest();
     if (pressed('KeyR') || pressed('Enter') || input.clicked) restart();

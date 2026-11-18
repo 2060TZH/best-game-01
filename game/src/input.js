@@ -3,6 +3,10 @@
 // The mouse aims: its position is kept in canvas coordinates.
 export function createInput(canvas) {
   const keys = new Set();
+  // Menu-key edges, recorded at the event: a quick tap counts even if it
+  // falls between two frames, and an edge older than half a second is
+  // stale (so a press from one screen never fires on a later screen).
+  const pressedAt = new Map();
   const input = {
     up: false,
     down: false,
@@ -29,6 +33,7 @@ export function createInput(canvas) {
   window.addEventListener('keydown', (event) => {
     if (event.repeat) return;
     keys.add(event.code);
+    pressedAt.set(event.code, performance.now());
     if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') input.pressedDash = true;
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) {
       event.preventDefault();
@@ -66,6 +71,14 @@ export function createInput(canvas) {
 
   // True while the key is held, for menu shortcuts (P, R, M, Enter).
   input.isDown = (code) => keys.has(code);
+
+  // True once per press, for menu shortcuts: consumes the recorded edge.
+  input.consumePress = (code) => {
+    const at = pressedAt.get(code);
+    if (at == null) return false;
+    pressedAt.delete(code);
+    return performance.now() - at < 500;
+  };
 
   return input;
 }
