@@ -61,6 +61,9 @@ function freshState() {
     orbs: [],
     particles: [],
     popups: [],
+    // 3D-rendered attack effects (explosion frames, shockwave rings):
+    // age in seconds, removed when they outlive their duration.
+    fx: [],
     powerups: [],
     spawnQueue: [],
     spawnTimer: 0,
@@ -177,6 +180,10 @@ export function createWorld(seed) {
     state.popups.push({ x, y, text, color, life: FEEL.popupLife, maxLife: FEEL.popupLife });
   }
 
+  function addFx(x, y, kind, scale, duration) {
+    state.fx.push({ x, y, kind, scale, age: 0, duration });
+  }
+
   function dropPowerup(x, y) {
     const roll = random();
     let type = null;
@@ -202,6 +209,7 @@ export function createWorld(seed) {
     state.enemies.splice(index, 1);
     state.kills += 1;
     addParticles(enemy.x, enemy.y, enemy.color, enemy.kind === 'bulwark' ? 26 : 12, 220);
+    addFx(enemy.x, enemy.y, 'explosion', enemy.kind === 'boss' ? 2 : 1, enemy.kind === 'boss' ? 0.6 : 0.4);
     if (awardScore) {
       state.combo += 1;
       state.comboTimer = COMBO.window + ((state.upgrades.adrenal || 0) > 0 ? 1 : 0);
@@ -339,6 +347,7 @@ export function createWorld(seed) {
       sfx.bomb();
       state.shake = 14;
       state.flashRed = 0.2;
+      addFx(player.x, player.y, 'ring', 1, 0.5);
       [...state.enemies].forEach((enemy) => killEnemy(enemy, true));
       state.orbs.length = 0;
     }
@@ -653,6 +662,8 @@ export function createWorld(seed) {
       popup.life -= dt;
     }
     state.popups = state.popups.filter((p) => p.life > 0);
+    for (const effect of state.fx) effect.age += dt;
+    state.fx = state.fx.filter((f) => f.age < f.duration);
     for (const powerup of state.powerups) {
       powerup.y += POWERUPS.fallSpeed * dt * 0.4;
       powerup.bob += dt * 3;

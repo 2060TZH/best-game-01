@@ -22,6 +22,23 @@ function bossEntranceScale(age) {
   return 1 + 2.70158 * (t - 1) ** 3 + 1.70158 * (t - 1) ** 2;
 }
 
+// 3D-rendered attack effects (Blender, transparent PNGs). Each is drawn
+// only when its file has loaded; otherwise the game falls back to the
+// procedural particles, dots and shake it already had.
+const explosionFrames = [];
+for (let i = 0; i < 10; i += 1) {
+  const frame = new Image();
+  frame.src = `assets/fx/exp-0${i}.png`;
+  explosionFrames.push(frame);
+}
+const boltImage = new Image();
+boltImage.src = 'assets/fx/bolt.png';
+const ringImage = new Image();
+ringImage.src = 'assets/fx/ring.png';
+function imageReady(image) {
+  return image.complete && image.naturalWidth > 0;
+}
+
 // A fixed starfield, the same on every run.
 const stars = (() => {
   const random = makeRandom(1337);
@@ -211,6 +228,34 @@ function drawEnemy(ctx, enemy, time) {
   ctx.restore();
 }
 
+function drawFx(ctx, state) {
+  for (const effect of state.fx) {
+    const progress = effect.age / effect.duration;
+    if (effect.kind === 'explosion') {
+      const frame = explosionFrames[Math.min(9, Math.floor(progress * 10))];
+      if (!imageReady(frame)) continue;
+      const size = 90 * effect.scale;
+      ctx.save();
+      ctx.translate(effect.x, effect.y);
+      ctx.shadowColor = '#ff2e88';
+      ctx.shadowBlur = 24;
+      ctx.globalAlpha = 1 - progress * 0.5;
+      ctx.drawImage(frame, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else if (effect.kind === 'ring') {
+      if (!imageReady(ringImage)) continue;
+      const size = (60 + progress * 340) * effect.scale;
+      ctx.save();
+      ctx.translate(effect.x, effect.y);
+      ctx.globalAlpha = Math.max(0, 1 - progress);
+      ctx.shadowColor = '#4de8ff';
+      ctx.shadowBlur = 18;
+      ctx.drawImage(ringImage, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    }
+  }
+}
+
 function drawBullets(ctx, state) {
   ctx.save();
   ctx.shadowColor = PALETTE.bullet;
@@ -219,6 +264,15 @@ function drawBullets(ctx, state) {
   ctx.fillStyle = PALETTE.bullet;
   ctx.lineWidth = 2;
   for (const bullet of state.bullets) {
+    if (imageReady(boltImage)) {
+      // A 3D-rendered plasma bolt, spun to the bullet's flight direction.
+      ctx.save();
+      ctx.translate(bullet.x, bullet.y);
+      ctx.rotate(Math.atan2(bullet.vy, bullet.vx));
+      ctx.drawImage(boltImage, -12, -6, 24, 12);
+      ctx.restore();
+      continue;
+    }
     // A short trail so a shot reads as motion, not a dot.
     ctx.beginPath();
     ctx.moveTo(bullet.x - bullet.vx * 0.03, bullet.y - bullet.vy * 0.03);
@@ -594,6 +648,7 @@ export function render(ctx, state, time) {
     drawBullets(ctx, state);
     if (state.screen !== SCREEN_OVER && state.screen !== SCREEN_WIN) drawPlayer(ctx, state, time);
     drawParticles(ctx, state);
+    drawFx(ctx, state);
     drawPopups(ctx, state);
     drawHud(ctx, state);
     drawBanner(ctx, state);
